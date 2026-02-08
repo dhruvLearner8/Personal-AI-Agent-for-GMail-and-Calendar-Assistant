@@ -1,0 +1,19 @@
+[project]
+name = "email-assistant-backend"
+version = "0.1.0"
+description = "AI Email Assistant — MCP backend with Gmail integration"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "google-api-python-client>=2.189.0",
+    "google-auth>=2.48.0",
+    "google-auth-httplib2>=0.3.0",
+    "google-auth-oauthlib>=1.2.4",
+    "mcp[cli]>=1.26.0",
+    "google-genai>=1.62.0",
+    "PyPDF2>=3.0.0",
+    "python-docx>=1.1.0",
+]
