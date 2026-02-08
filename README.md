@@ -1,3 +1,6 @@
+# Demo
+https://drive.google.com/file/d/1f6T-BQvqr8CsJ6vMoArBD12LBl1k59Fm/view?usp=sharing
+
 # AI Email & Calendar Assistant
 
 A full-stack AI assistant that manages your Gmail inbox and Google Calendar through natural language. Powered by **Google Gemini 2.0 Flash**, it uses an agentic architecture with the **Model Context Protocol (MCP)** to orchestrate multi-step workflows — reading emails, summarizing threads, extracting document attachments, managing calendar events, and sending emails — all from a single chat interface.
