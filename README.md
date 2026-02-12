@@ -1,3 +1,6 @@
+# Demo
+## https://drive.google.com/file/d/1f6T-BQvqr8CsJ6vMoArBD12LBl1k59Fm/view?usp=sharing
+
 # AI Email & Calendar Assistant with RAG
 
 A full-stack agentic AI assistant that manages your Gmail inbox and Google Calendar through natural language. Built with a structured **Perception → Memory → Decision → Action** pipeline, powered by **Google Gemini 2.0 Flash**, with **RAG (Retrieval-Augmented Generation)** for deep document understanding.
