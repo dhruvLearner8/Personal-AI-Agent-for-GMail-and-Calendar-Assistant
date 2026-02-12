@@ -395,11 +395,8 @@ def get_email_attachments(message_id: str) -> dict:
                 raw_data = base64.urlsafe_b64decode(att.get("data", ""))
                 size = len(raw_data)
 
-                # Extract text content
+                # Extract text content (full — no trimming here, MCP layer handles it)
                 content = _extract_attachment_text(filename, raw_data)
-                # Trim to keep prompt size manageable
-                if len(content) > 3000:
-                    content = content[:3000] + "\n... [trimmed — document continues]"
 
                 attachments.append({
                     "filename": filename,

@@ -2,7 +2,7 @@
 MCP tool definitions for the AI Email & Calendar Assistant.
 
 These tools are consumed by the agent (via stdio) and wrap the
-gmail_client / calendar_client functions.
+gmail_client / calendar_client / rag functions.
 
 Run standalone:
     python mcp_tools.py        # stdio transport (for MCP clients)
@@ -11,6 +11,12 @@ Run standalone:
 
 import sys
 from mcp.server.fastmcp import FastMCP
+
+
+def mcp_log(level: str, msg: str):
+    """Log to stderr to avoid corrupting MCP's JSON-RPC stdout protocol."""
+    sys.stderr.write(f"[{level}] {msg}\n")
+    sys.stderr.flush()
 from gmail_client import get_unread_emails_today as _fetch_unread
 from gmail_client import get_emails_by_date_range as _fetch_emails_by_range
 from gmail_client import search_emails as _search_emails
@@ -23,9 +29,15 @@ from calendar_client import (
     check_free_slots as _check_free_slots,
     create_event as _create_event,
 )
+from rag import index_document as _rag_index, search_documents as _rag_search
 
 # ── MCP server instance ──────────────────────────────────────────────
 mcp = FastMCP("EmailCalendarAssistant")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# GMAIL TOOLS
+# ══════════════════════════════════════════════════════════════════════
 
 
 @mcp.tool()
@@ -143,6 +155,7 @@ def get_email_thread(thread_id: str) -> dict:
 def get_email_attachments(message_id: str) -> dict:
     """
     Fetch attachments from a specific email and extract their text content.
+    Large documents are automatically indexed for RAG search via search_indexed_documents.
     Use this after search_emails (with has:attachment) to read documents sent in an email.
 
     Args:
@@ -155,14 +168,54 @@ def get_email_attachments(message_id: str) -> dict:
       "from": "...",
       "attachment_count": 2,
       "attachments": [
-        {"filename": "report.pdf", "mime_type": "application/pdf", "size": 12345, "content": "extracted text..."}
+        {"filename": "report.pdf", "mime_type": "application/pdf", "size": 12345, "content": "preview...", "indexed": true}
       ]
     }
     """
     print(f"CALLED: get_email_attachments(message_id={message_id})")
     try:
         result = _get_email_attachments(message_id)
+
+        # Auto-index large attachments for RAG
+        for att in result.get("attachments", []):
+            content = att.get("content", "")
+            filename = att.get("filename", "unknown")
+
+            # Write debug log to file (MCP subprocess stderr is not forwarded)
+            from pathlib import Path
+            debug_log = Path(__file__).parent / "rag_debug.log"
+
+            with open(debug_log, "a") as f:
+                f.write(f"\n--- Attachment: {filename} ---\n")
+                f.write(f"Content length: {len(content)} chars\n")
+
+            if len(content) > 500:
+                # Index full document in FAISS for RAG search
+                title = f"{result.get('subject', 'email')} - {filename}"
+                try:
+                    rag_result = _rag_index(title, content)
+                    att["indexed"] = True
+                    att["rag_status"] = rag_result.get("status", "unknown")
+                    att["rag_chunks"] = rag_result.get("chunks", 0)
+                    with open(debug_log, "a") as f:
+                        f.write(f"RAG SUCCESS: {rag_result}\n")
+                except Exception as e:
+                    import traceback
+                    att["indexed"] = False
+                    att["rag_error"] = str(e)
+                    with open(debug_log, "a") as f:
+                        f.write(f"RAG FAILED: {type(e).__name__}: {e}\n")
+                        traceback.print_exc(file=f)
+
+                # Trim content for LLM response (full text is in FAISS)
+                att["content"] = content[:500] + f"\n... [full document indexed for search — use search_indexed_documents to find specific info]"
+            else:
+                att["indexed"] = False
+                with open(debug_log, "a") as f:
+                    f.write(f"SKIPPED: content too short ({len(content)} <= 500)\n")
+
         return result
+
     except FileNotFoundError as e:
         return {"error": str(e), "attachments": []}
     except Exception as e:
@@ -197,7 +250,10 @@ def send_email(to: str, subject: str, body: str) -> dict:
         return {"error": f"Gmail API error: {str(e)}", "status": "failed"}
 
 
-# ── Calendar tools ────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════
+# CALENDAR TOOLS
+# ══════════════════════════════════════════════════════════════════════
+
 
 @mcp.tool()
 def get_todays_events() -> dict:
@@ -300,9 +356,40 @@ def create_event(title: str, date: str, start_time: str, end_time: str, attendee
         return {"error": f"Calendar API error: {str(e)}", "status": "failed"}
 
 
+# ══════════════════════════════════════════════════════════════════════
+# RAG / DOCUMENT SEARCH TOOLS
+# ══════════════════════════════════════════════════════════════════════
+
+
+@mcp.tool()
+def search_indexed_documents(query: str) -> dict:
+    """
+    Search through previously indexed email attachments (PDFs, DOCX, etc.) using semantic search.
+    Documents are automatically indexed when get_email_attachments is called.
+    Use this to find specific information within large documents.
+
+    Args:
+        query: Natural language search query (e.g. "revenue figures", "project timeline", "terms and conditions")
+
+    Output format:
+    {
+      "query": "revenue figures",
+      "results": [
+        {"title": "Q3 Report - report.pdf", "chunk": "relevant text...", "chunk_id": "Q3 Report_3"}
+      ]
+    }
+    """
+    print(f"CALLED: search_indexed_documents(query={query})")
+    try:
+        results = _rag_search(query, top_k=5)
+        return {"query": query, "results": results}
+    except Exception as e:
+        return {"error": f"RAG search error: {str(e)}", "query": query, "results": []}
+
+
 # ── Entry-point (for running as standalone MCP server) ────────────────
 if __name__ == "__main__":
-    print("Starting Email Assistant MCP server ...")
+    print("Starting Email Calendar RAG Assistant MCP server ...")
     if len(sys.argv) > 1 and sys.argv[1] == "dev":
         mcp.run()
     else:
